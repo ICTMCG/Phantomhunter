@@ -1,6 +1,6 @@
 # PhantomHunter: AI-Generated Text Detection with Multi-Task MoE Framework
 
-Official implementation of "PhantomHunter: A Multi-Task Framework with Mixture of Experts for Generalized Generated Text Detection" (SIGIR 2026).
+Official implementation of "PhantomHunter: A Multi-Task Framework with Mixture of Experts for Generalized Generated Text Detection".
 
 ## Overview
 
