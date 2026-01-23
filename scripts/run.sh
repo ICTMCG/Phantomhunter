@@ -7,7 +7,7 @@ CUDA_VISIBLE_DEVICES=0 python main.py \
     --test-path /feature/arxiv_new/lora/test_ood.jsonl \
     --batch-size 64 \
     --lr 5e-4 \
-    --train
-    # --test
+    --test
+    # --train
     # --inference \
     # --pred-name arxiv_lora 

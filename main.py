@@ -40,7 +40,6 @@ def set_seed(seed):
     torch.cuda.manual_seed(seed)
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
-    # torch.backends.cudnn.enabled = False
 
 def main(args):
     set_seed(args.seed)
@@ -50,17 +49,6 @@ def main(args):
         os.makedirs(args.model_save_dir)
     model_save_path = os.path.join(args.model_save_dir, f'params_{args.exp_name}.pt')
 
-    # QAdata use
-    # label2id = {
-    #     'human': 0,
-    #     'generated': 1,
-    #     'llama2': 1,
-    #     'mistral': 2,
-    #     'gemma': 3,
-    #     'Qwen2.5': 4,
-    # }
-
-    # ARXIV use
     label2id = {
         'human': 0,
         'generated': 1,

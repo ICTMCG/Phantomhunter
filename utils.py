@@ -39,49 +39,42 @@ def acc_fpr1(y_true, y_score, sample_weight=None):
     idx = np.where(fpr <= 0.01)[0]
     return tpr[idx[-1]], thresholds[idx[-1]]
 
-def metrics(y_true, y_score):
-    with open('./score.json', 'w') as f:
-        json.dump({
-            'y_true': y_true.tolist(),
-            'y_score': y_score.tolist()
-        }, f)
-    # print(y_true)
-    # print(y_score)
-    results = dict()
-    y_pred = y_score.round()
-    results['accuracy'] = accuracy_score(y_true, y_pred)
-    results['macf1'] = f1_score(y_true, y_pred, average='macro')
-    results['precision'] = precision_score(y_true, y_pred, average='macro')
-    results['recall'] = recall_score(y_true, y_pred, average='macro')
-    results['auc_ovo'] = roc_auc_score(y_true, y_score, average='macro', multi_class='ovo')
-    results['auc_ovr'] = roc_auc_score(y_true, y_score, average='macro', multi_class='ovr')
-    # print(confusion_matrix(y_true, y_pred))
-    results['f1'] = f1_score(y_true, y_pred, average=None)
-    results['acc_fpr1'] = acc_fpr1(y_true, y_score)
+def metrics(y_true, y_score, is_binary):
+    if is_binary:
+        with open('./score.json', 'w') as f:
+            json.dump({
+                'y_true': y_true.tolist(),
+                'y_score': y_score.tolist()
+            }, f)
+        results = dict()
+        y_pred = y_score.round()
+        results['accuracy'] = accuracy_score(y_true, y_pred)
+        results['macf1'] = f1_score(y_true, y_pred, average='macro')
+        results['precision'] = precision_score(y_true, y_pred, average='macro')
+        results['recall'] = recall_score(y_true, y_pred, average='macro')
+        results['auc_ovo'] = roc_auc_score(y_true, y_score, average='macro', multi_class='ovo')
+        results['auc_ovr'] = roc_auc_score(y_true, y_score, average='macro', multi_class='ovr')
+        results['f1'] = f1_score(y_true, y_pred, average=None)
+        results['acc_fpr1'] = acc_fpr1(y_true, y_score)
+        results['sensitivity'] = recall_score(y_true, y_pred, pos_label=1)
+        results['specificity'] = recall_score(y_true, y_pred, pos_label=0)
 
-    # 计算生成为正类的灵敏度 & 特异度
-    results['sensitivity'] = recall_score(y_true, y_pred, pos_label=1)
-    results['specificity'] = recall_score(y_true, y_pred, pos_label=0)
-
-    return results
-
-# def metrics(y_true, y_score):
-#     # print(y_true)
-#     # print(y_score)
-#     results = dict()
-#     y_pred = y_score.argmax(dim=1)
-#     results['accuracy'] = accuracy_score(y_true, y_pred)
-#     results['f1'] = f1_score(y_true, y_pred, average='macro')
-#     results['precision'] = precision_score(y_true, y_pred, average='macro')
-#     results['recall'] = recall_score(y_true, y_pred, average='macro')
-#     try:
-#         if y_score.shape[1] == 2:
-#             y_score = y_score[:, 1]
-#         results['auc_ovo'] = roc_auc_score(y_true, y_score, average='macro', multi_class='ovo')
-#         results['auc_ovr'] = roc_auc_score(y_true, y_score, average='macro', multi_class='ovr')
-#     except ValueError:
-#         results['auc_ovo'] = 0
-#         results['auc_ovr'] = 0
-#     # print(confusion_matrix(y_true, y_pred))
-#     print(f1_score(y_true, y_pred, average=None))
-#     return results
+        return results
+    else:
+        results = dict()
+        y_pred = y_score.argmax(dim=1)
+        results['accuracy'] = accuracy_score(y_true, y_pred)
+        results['f1'] = f1_score(y_true, y_pred, average='macro')
+        results['precision'] = precision_score(y_true, y_pred, average='macro')
+        results['recall'] = recall_score(y_true, y_pred, average='macro')
+        try:
+            if y_score.shape[1] == 2:
+                y_score = y_score[:, 1]
+            results['auc_ovo'] = roc_auc_score(y_true, y_score, average='macro', multi_class='ovo')
+            results['auc_ovr'] = roc_auc_score(y_true, y_score, average='macro', multi_class='ovr')
+        except ValueError:
+            results['auc_ovo'] = 0
+            results['auc_ovr'] = 0
+        print(f1_score(y_true, y_pred, average=None))
+        return results
+    

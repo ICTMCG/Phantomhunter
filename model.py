@@ -78,7 +78,6 @@ class ConvFeatureExtractionModel(nn.Module):
             in_d = dim
 
     def forward(self, x):
-        # x = x.unsqueeze(1)
         for conv in self.conv_layers:
             x = conv(x)
         return x
@@ -136,8 +135,6 @@ class Model(nn.Module):
         prob_feature = self.encoder(prob_feature)
         prob_feature = self.dropout(prob_feature)  # (bs, seq_len, embedding_size)
         prob_feature_mean = torch.mean(prob_feature, dim=1)  # (bs, embedding_size)
-
-        # attention_feature, _ = self.attention(feature, mask)
 
         family_feature = self.family_feature_extractor(prob_feature_mean)  # (bs, 128)
         pred_family = self.family_classifier(family_feature)
@@ -219,7 +216,6 @@ class Trainer:
             results = self.test(self.val_dataloader)
             print('epoch %d: loss = %.4f, acc = %.4f, macf1 = %.4f, auc_ovo = %.4f' % (epoch+1, avg_loss.get(), results['accuracy'], results['macf1'], results['auc_ovo']))
 
-            # early stop
             decision = recorder.update(results['macf1'])
             if decision == 'save':
                 torch.save(self.model.state_dict(), self.model_save_path)
@@ -229,7 +225,6 @@ class Trainer:
                 continue
             torch.save(self.model.state_dict(), self.model_save_path)
 
-        # load best model
         self.model.load_state_dict(torch.load(self.model_save_path))
         print('----test----')
         results = self.test(self.test_dataloader)
@@ -246,7 +241,7 @@ class Trainer:
                 y_score = torch.cat((y_score, output))
                 y_true = torch.cat((y_true, batch['label_binary']))
 
-            results = metrics(y_true, y_score)
+            results = metrics(y_true, y_score, self.is_binary)
             return results
         else:
             y_true_family = torch.empty(0)
@@ -259,11 +254,10 @@ class Trainer:
                 y_true = torch.cat((y_true, batch['label_binary']))
                 y_score_family = torch.cat((y_score_family, pred_family))
                 y_true_family = torch.cat((y_true_family, batch['label_family']))
-
-            results = metrics(y_true_family, y_score_family)
+            results = metrics(y_true_family, y_score_family, self.is_binary)
             return results
         
-            # inference with binary logits
+        
     def inference(self, dataloader, threshold=0.5):
         predictions = []
         texts = []
@@ -275,7 +269,7 @@ class Trainer:
                batch_texts = batch['text']
                batch_label_binary = batch['label_binary'].to(self.device)
                output = self.get_output(batch)
-               # 转换为CPU并应用阈值
+
                pred_probs = output.cpu().numpy()
                batch_predictions = ['generated' if prob >= threshold else 'human' for prob in pred_probs]
                probs_list.extend(pred_probs.tolist())
