@@ -18,41 +18,22 @@ PhantomHunter is a unified framework for detecting AI-generated text that levera
 
 **PhantomHunter** and the training process. Given a text sample $\mathbf{x}$, it **1)** extracts the probability feature from $M$ base models and encode them with CNN and transformer blocks; **2)** predicts the family of $\mathbf{x}$ to determine the family gating weights; and **3)** feeds the representation $\mathbf{R}_{F}$ to a mixture-of-experts network controlled by the gating weights from Step 2 for final prediction of $\mathbf{x}$ being LLM-generated. During training, contrastive learning is applied in each mini-batch to better model family relationships. The red terms are loss functions.
 
-## Key Features
-
-- **Multi-Task Learning**: Simultaneously performs binary detection (human vs. AI) and multi-class classification (identifying specific AI models)
-- **Mixture of Experts**: Dynamic routing mechanism adapts to different AI generation patterns
-- **Contrastive Learning**: Enhances feature discrimination across model families
-- **LoRA Adaptation**: Efficient fine-tuning with model-specific expert adapters
-
-## Supported AI Models
-
-- **Human** (baseline)
-- **Llama** (Meta)
-- **Mistral** (Mistral AI)
-- **Gemma** (Google)
-- **Qwen2.5** (Alibaba)
-
 ## Quick Start
 
 ### Installation
+pip install -r requirements.txt
 
-```bash
-pip install torch transformers scikit-learn
-```
-
-### Training
-
+### Train 
 ```bash
 python main.py \
-    --cuda \
-    --exp-name phantom_hunter \
-    --train-path feature/arxiv_new/lora/train.jsonl \
-    --val-path feature/arxiv_new/lora/val.jsonl \
-    --test-path feature/arxiv_new/lora/test_ood.jsonl \
+    --cuda  \
+    --seed 2024 \
+    --exp-name moe+logits+cl_arxiv-lora_5e-4 \
+    --train-path /feature/arxiv_new/lora/train.jsonl \
+    --val-path /feature//arxiv_new/lora/val.jsonl \
+    --test-path /feature/arxiv_new/lora/test_ood.jsonl \
     --batch-size 64 \
     --lr 5e-4 \
-    --is-cl \
     --train
 ```
 
@@ -60,10 +41,15 @@ python main.py \
 
 ```bash
 python main.py \
-    --cuda \
-    --test \
-    --exp-name phantom_hunter \
-    --test-path feature/arxiv_new/lora/test_ood.jsonl
+    --cuda  \
+    --seed 2024 \
+    --exp-name moe+logits+cl_arxiv-lora_5e-4 \
+    --train-path /feature/arxiv_new/lora/train.jsonl \
+    --val-path /feature//arxiv_new/lora/val.jsonl \
+    --test-path /feature/arxiv_new/lora/test_ood.jsonl \
+    --batch-size 64 \
+    --lr 5e-4 \
+    --test
 ```
 
 
