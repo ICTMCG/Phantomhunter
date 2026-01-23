@@ -30,7 +30,6 @@ Some test data can be available at ./data/
 ### Installation
 ```
 pip install -r requirements.txt
-
 ```
 
 ### Genfeature through four white-box model
