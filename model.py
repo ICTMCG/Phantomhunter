@@ -8,6 +8,19 @@ from utils import Averager, Recorder, metrics
 from scl_loss import SupConLoss
 from typing import List, Tuple
 
+class ProxyModule(nn.Module):
+    def __init__(self, emb_dim, n_feat):
+        super(ProxyModule, self).__init__()
+        self.net = nn.Sequential(
+            nn.Linear(emb_dim, 256),
+            nn.ReLU(),
+            nn.Linear(256, n_feat)
+        )
+
+    def forward(self, feature):
+        out = self.net(feature)
+        return out.transpose(1, 2)
+
 class MLP(nn.Module):
     def __init__(self, input_dim, hidden_dims, output_dim, dropout):
         super(MLP, self).__init__()
@@ -87,7 +100,8 @@ class Model(nn.Module):
         super(Model, self).__init__()
         self.n_family = n_family
 
-        self.n_feat = 3
+        self.n_feat = n_family - 1
+        self.proxy_module = ProxyModule(emb_dim, self.n_feat)
         feature_enc_layers = [(64, 5, 1)] + [(128, 3, 1)] * 3 + [(64, 3, 1)]
         self.conv = ConvFeatureExtractionModel(
             conv_layers=feature_enc_layers,
@@ -128,9 +142,17 @@ class Model(nn.Module):
         out = out.transpose(1, 2)
         return out
 
-    def forward(self, prob_feature, feature, mask):
+    def forward(self, prob_feature, feature, mask, use_proxy_prob=0.0):
+        pred_prob_feature = self.proxy_module(feature)
+
+        if self.training and use_proxy_prob > 0.0:
+            if torch.rand((), device=feature.device).item() < use_proxy_prob:
+                prob_feature = pred_prob_feature
+        elif not self.training and use_proxy_prob >= 1.0:
+            prob_feature = pred_prob_feature
+
         prob_feature = torch.cat([self.conv_feat_extract(prob_feature[:, i:i+1, :]) for i in range(self.n_feat)], dim=2)  # (batch_size, seq_len, embedding_size)
-        prob_feature = prob_feature + self.position_encoding.cuda()
+        prob_feature = prob_feature + self.position_encoding.to(prob_feature.device)
         prob_feature = self.norm(prob_feature)
         prob_feature = self.encoder(prob_feature)
         prob_feature = self.dropout(prob_feature)  # (bs, seq_len, embedding_size)
@@ -142,12 +164,12 @@ class Model(nn.Module):
 
         shared_feature = sum([self.expert[i](prob_feature) * gate[:, i].unsqueeze(1) for i in range(self.n_family)])
         pred_binary = self.binary_classifier(shared_feature)
-        pred_binary = torch.sigmoid(pred_binary).squeeze()
+        pred_binary = torch.sigmoid(pred_binary).squeeze(-1)
 
-        return pred_binary, pred_family, family_feature
+        return pred_binary, pred_family, family_feature, pred_prob_feature
 
 class Trainer:
-    def __init__(self, device, pretrain_model, train_dataloader, val_dataloader, test_dataloader, epoch, lr, early_stop, model_save_path, n_family, is_cl, is_binary):
+    def __init__(self, device, pretrain_model, train_dataloader, val_dataloader, test_dataloader, epoch, lr, early_stop, model_save_path, n_family, is_cl, is_binary, proxy_prob=0.0, proxy_warmup_epochs=0, mse_weight=0.0, use_proxy_inference=False, use_curriculum=False):
         self.device = device
         self.epoch = epoch
         self.train_dataloader = train_dataloader
@@ -155,6 +177,13 @@ class Trainer:
         self.test_dataloader = test_dataloader
         self.early_stop = early_stop
         self.n_family = n_family
+        self.proxy_prob = proxy_prob
+        self.proxy_warmup_epochs = proxy_warmup_epochs
+        self.mse_weight = mse_weight
+        self.use_proxy_inference = use_proxy_inference
+        self.use_curriculum = use_curriculum
+        self.current_proxy_prob = 0.0
+        self.current_mse_weight = 0.0
         self.pretrain = RobertaModel.from_pretrained(pretrain_model).to(device)
         self.model_save_path = model_save_path
         self.model = Model(n_family=n_family).to(device)
@@ -170,7 +199,7 @@ class Trainer:
         label_family = batch['label_family'].to(self.device)
         label_binary = batch['label_binary'].to(self.device)
 
-        pred_binary, pred_family, family_feature = self.model(ll_tokens_list, feature, attention_mask)
+        pred_binary, pred_family, family_feature, pred_prob_feature = self.model(ll_tokens_list, feature, attention_mask, use_proxy_prob=self.current_proxy_prob)
         if  self.is_clLoss:
             loss = nn.BCELoss()(pred_binary, label_binary.float()) \
                     + nn.CrossEntropyLoss()(pred_family, label_family) \
@@ -178,6 +207,10 @@ class Trainer:
         else:
             loss = nn.BCELoss()(pred_binary, label_binary.float()) \
                     + nn.CrossEntropyLoss()(pred_family, label_family)
+        if self.current_mse_weight > 0.0:
+            real_targets = ll_tokens_list[:, :self.model.n_feat, :]
+            loss_mse = nn.MSELoss()(pred_prob_feature, real_targets)
+            loss = loss + self.current_mse_weight * loss_mse
         return loss
 
     def get_output(self, batch):
@@ -187,7 +220,7 @@ class Trainer:
             attention_mask = batch['attention_mask'].to(self.device)
             feature = self.pretrain(input_ids, attention_mask).last_hidden_state.detach()
             with torch.no_grad():
-                output, _, _ = self.model(ll_tokens_list, feature, attention_mask)
+                output, _, _, _ = self.model(ll_tokens_list, feature, attention_mask, use_proxy_prob=1.0 if self.use_proxy_inference else 0.0)
             return output
         else:
             ll_tokens_list = batch['ll_tokens_list'].to(self.device)
@@ -195,7 +228,7 @@ class Trainer:
             attention_mask = batch['attention_mask'].to(self.device)
             feature = self.pretrain(input_ids, attention_mask).last_hidden_state.detach()
             with torch.no_grad():
-                output, pred_family, _ = self.model(ll_tokens_list, feature, attention_mask)
+                output, pred_family, _, _ = self.model(ll_tokens_list, feature, attention_mask, use_proxy_prob=1.0 if self.use_proxy_inference else 0.0)
             return output, pred_family
 
 
@@ -203,7 +236,18 @@ class Trainer:
     def train(self):
         recorder = Recorder(self.early_stop)
         for epoch in range(self.epoch):
-            print('----epoch %d----' % (epoch+1))
+            if self.use_curriculum and self.proxy_warmup_epochs > 0:
+                warmup_ratio = min(1.0, (epoch + 1) / self.proxy_warmup_epochs)
+                self.current_proxy_prob = self.proxy_prob * warmup_ratio
+                self.current_mse_weight = self.mse_weight * warmup_ratio
+            else:
+                self.current_proxy_prob = self.proxy_prob
+                self.current_mse_weight = self.mse_weight
+
+            if self.proxy_prob > 0.0 or self.mse_weight > 0.0:
+                print('----epoch %d (proxy_prob: %.2f, mse_weight: %.2f)----' % (epoch+1, self.current_proxy_prob, self.current_mse_weight))
+            else:
+                print('----epoch %d----' % (epoch+1))
             self.model.train()
             avg_loss = Averager()
             for i, batch in enumerate(tqdm(self.train_dataloader)):

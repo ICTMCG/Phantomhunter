@@ -73,6 +73,31 @@ python main.py \
     --train
 ```
 
+### Train with Proxy MSE
+
+The Proxy module learns to approximate the white-box probability features from
+the encoder hidden states. During training, `--proxy-prob` controls how often the
+model consumes proxy-generated features, while `--mse-weight` supervises the
+proxy features against the original white-box probability features.
+
+```bash
+python main.py \
+    --cuda \
+    --seed 2024 \
+    --exp-name moe+logits+cl+proxy_mse_arxiv-lora_5e-4 \
+    --train-path /feature/arxiv_new/lora/train.jsonl \
+    --val-path /feature//arxiv_new/lora/val.jsonl \
+    --test-path /feature/arxiv_new/lora/test_ood.jsonl \
+    --batch-size 64 \
+    --lr 5e-4 \
+    --is-cl \
+    --proxy-prob 0.5 \
+    --mse-weight 1.0 \
+    --use-curriculum \
+    --proxy-warmup-epochs 10 \
+    --train
+```
+
 ### Evaluation
 
 ```bash
@@ -85,6 +110,22 @@ python main.py \
     --test-path /feature/arxiv_new/lora/test_ood.jsonl \
     --batch-size 64 \
     --lr 5e-4 \
+    --test
+```
+
+To evaluate with proxy-generated features instead of white-box probability
+features, add `--use-proxy`:
+
+```bash
+python main.py \
+    --cuda \
+    --seed 2024 \
+    --exp-name moe+logits+cl+proxy_mse_arxiv-lora_5e-4 \
+    --test-path /feature/arxiv_new/lora/test_ood.jsonl \
+    --batch-size 64 \
+    --lr 5e-4 \
+    --is-binary \
+    --use-proxy \
     --test
 ```
 
