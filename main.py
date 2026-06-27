@@ -30,6 +30,11 @@ def parse_args():
     parser.add_argument('--train', action='store_true')
     parser.add_argument('--is-binary',  action='store_true', help='True indicate binary classification,False indicate multi-classification')
     parser.add_argument('--is-cl',  action='store_true', help='if use contrastive learning')
+    parser.add_argument('--use-proxy', action='store_true', help='use the proxy module to replace white-box probability features at inference time')
+    parser.add_argument('--proxy-prob', type=float, default=0.0, help='probability of using proxy-generated probability features during training')
+    parser.add_argument('--proxy-warmup-epochs', type=int, default=0, help='number of epochs used to warm up proxy probability and MSE weight')
+    parser.add_argument('--use-curriculum', action='store_true', help='linearly increase proxy probability and MSE weight during warmup')
+    parser.add_argument('--mse-weight', type=float, default=0.0, help='weight for MSE loss between proxy features and white-box probability features')
     return parser.parse_args()
 
 def set_seed(seed):
@@ -62,7 +67,25 @@ def main(args):
     train_dataloader = get_dataloader(args.train_path, args.pretrain_model, args.batch_size, args.max_len, label2id, shuffle=True) if not args.test else None
     val_dataloader = get_dataloader(args.val_path, args.pretrain_model, args.batch_size, args.max_len, label2id, shuffle=False) if not args.test else None
     test_dataloader = get_dataloader(args.test_path, args.pretrain_model, args.batch_size, args.max_len, label2id, shuffle=False)
-    trainer = Trainer(device, args.pretrain_model, train_dataloader, val_dataloader, test_dataloader, args.epoch, args.lr, args.early_stop, model_save_path, args.n_family, args.is_cl, args.is_binary)
+    trainer = Trainer(
+        device,
+        args.pretrain_model,
+        train_dataloader,
+        val_dataloader,
+        test_dataloader,
+        args.epoch,
+        args.lr,
+        args.early_stop,
+        model_save_path,
+        args.n_family,
+        args.is_cl,
+        args.is_binary,
+        proxy_prob=args.proxy_prob,
+        proxy_warmup_epochs=args.proxy_warmup_epochs,
+        mse_weight=args.mse_weight,
+        use_proxy_inference=args.use_proxy,
+        use_curriculum=args.use_curriculum,
+    )
 
     if not args.test:
         trainer.train()

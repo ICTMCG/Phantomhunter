@@ -2,11 +2,11 @@
 
 With the popularity of large language models (LLMs), undesirable societal problems like misinformation production and academic misconduct have been more severe, making LLM-generated text detection now of unprecedented importance. Though existing methods have made remarkable progress, they mostly consider publicly known LLMs when testing the performance and a new challenge brought by text from privately-tuned LLMs is largely underexplored.
 
-Due to the rapid development of open-source models like LLaMA and Qwen series and efficient LLM training methods, even ordinary users can now easily possess private LLMs by fine-tuning an open-source one with private corpora. This could lead to a significant performance drop of existing detectors in practice, due to their poor capability of capturing the essential LLM traits robust to fine-tuning operations.
+Due to the rapid development of open-source models like the Qwen and LLaMA series, even ordinary users can now easily possess private LLMs by further tuning an open-source one with private corpora. This could lead to a significant performance drop of existing detectors by 41% at most in our preliminary study, due to their poor capability of capturing the essential LLM traits robust to fine-tuning operations.
 
-Our preliminary examination reveals that fine-tuning an LLM with 11M tokens could make a detector's accuracy jump from 100\% to only 59\% at most. To address this issue, we propose **PhantomHunter**, an LLM-generated text detector specialized for detecting text from unseen privately-tuned LLMs, whose family-aware learning framework captures family-level traits shared across the base models and their derivatives, instead of memorizing individual characteristics.
+To address this issue, we propose **PhantomHunter**, an LLM-generated text detector specialized for detecting text from unseen privately-tuned LLMs. Instead of memorizing individual characteristics, PhantomHunter's family-aware learning framework captures family-level traits shared across the base models and their derivatives.
 
-Specifically, PhantomHunter first extracts base model features and enhances the family-shared information using a contrastive family-aware learning module. The enhanced features are then fed into a mixture-of-experts module containing multiple experts for corresponding families for final predictions. Experiments on data from four widely-adopted LLM families (LLaMA, Gemma, Mistral, and Qwen) show PhantomHunter's superiority over 8 baselines and 11 industrial services.
+Specifically, PhantomHunter first extracts base model features and distills them into a lightweight proxy module for deployment efficiency consideration, followed by a contrastive family-aware learning module that enhances the family-shared information. The enhanced features are then fed into a mixture-of-experts module containing multiple experts for corresponding families for final predictions. Experiments on data from four widely-adopted LLM families (LLaMA, Gemma, Mistral, and Qwen) show PhantomHunter's superiority over 9 baselines and 11 industrial services.
 
 ---
 Here is the official implementation of "PhantomHunter: A Multi-Task Framework with Mixture of Experts for Generalized Generated Text Detection".
@@ -26,7 +26,7 @@ PhantomHunter is a unified framework for detecting AI-generated text that levera
 
 ![PhantomHunter Architecture](pic/method.png)
 
-**PhantomHunter** and the training process. Given a text sample $\mathbf{x}$, it **1)** extracts the probability feature from $M$ base models and encode them with CNN and transformer blocks; **2)** predicts the family of $\mathbf{x}$ to determine the family gating weights; and **3)** feeds the representation $\mathbf{R}_{F}$ to a mixture-of-experts network controlled by the gating weights from Step 2 for final prediction of $\mathbf{x}$ being LLM-generated. During training, contrastive learning is applied in each mini-batch to better model family relationships. The red terms are loss functions.
+**PhantomHunter** and the training process. Given a text sample $\mathbf{x}$, it **1)** extracts base probability lists from $M$ base LLMs and distills them into a lightweight RoBERTa-MLP proxy module, so the base LLMs can be dropped during inference; **2)** encodes the proxy probability features with CNN and Transformer blocks and applies contrastive family-aware learning to enhance family-shared information; and **3)** feeds the enhanced representation $\mathbf{R}_{F}$ to a mixture-of-experts network controlled by family gating weights for the final LLM-generated text prediction. The red terms are loss functions.
 
 ## Data
 We simulate two common LLM usage scenarios: **writing** (69,297 arXiv paper abstracts) and **question-answering** (3,062 Q&A pairs from ELI5, finance, and medicine domains). We select four open-source models (LLaMA-2-7B-Chat, Gemma-7B-it, Mistral-7B-Instruct-v0.1, Qwen2.5-7B-Instruct) and fine-tune each with full-parameter and LoRA methods on domain-specific corpora, resulting in 48 derivative models for evaluation. 
@@ -73,6 +73,31 @@ python main.py \
     --train
 ```
 
+### Train with Proxy MSE
+
+The Proxy module learns to approximate the white-box probability features from
+the encoder hidden states. During training, `--proxy-prob` controls how often the
+model consumes proxy-generated features, while `--mse-weight` supervises the
+proxy features against the original white-box probability features.
+
+```bash
+python main.py \
+    --cuda \
+    --seed 2024 \
+    --exp-name moe+logits+cl+proxy_mse_arxiv-lora_5e-4 \
+    --train-path /feature/arxiv_new/lora/train.jsonl \
+    --val-path /feature//arxiv_new/lora/val.jsonl \
+    --test-path /feature/arxiv_new/lora/test_ood.jsonl \
+    --batch-size 64 \
+    --lr 5e-4 \
+    --is-cl \
+    --proxy-prob 0.5 \
+    --mse-weight 1.0 \
+    --use-curriculum \
+    --proxy-warmup-epochs 10 \
+    --train
+```
+
 ### Evaluation
 
 ```bash
@@ -85,6 +110,22 @@ python main.py \
     --test-path /feature/arxiv_new/lora/test_ood.jsonl \
     --batch-size 64 \
     --lr 5e-4 \
+    --test
+```
+
+To evaluate with proxy-generated features instead of white-box probability
+features, add `--use-proxy`:
+
+```bash
+python main.py \
+    --cuda \
+    --seed 2024 \
+    --exp-name moe+logits+cl+proxy_mse_arxiv-lora_5e-4 \
+    --test-path /feature/arxiv_new/lora/test_ood.jsonl \
+    --batch-size 64 \
+    --lr 5e-4 \
+    --is-binary \
+    --use-proxy \
     --test
 ```
 
